@@ -223,34 +223,6 @@ Expression = (function-application Variable Expression ...)
  
 (define-syntax (function-app stx)
   (syntax-parse stx #:datum-literals (plus minus string+)
-    #;[(_ plus arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(+ arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    #;[(_ minus arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(- arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    #;[(_ string+ arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(string-append arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    #;[(_ ++ arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 1 n-args) #`(add1 arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
     [(_ f:id arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (define-values (arity the-function) (lookup #'f stx))

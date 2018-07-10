@@ -8,22 +8,28 @@
  app
  plus
  minus
- zero?
+ mult
+ iszero
  string+
  ++
  --
- min
- max
+ smallest
+ biggest
  div
- and
- or
+ both
+ any
  gt
  lt
  eq
+ then
+ else
  (rename-out
   [literal #%datum]
   [define-function define]
   [iff if]))
+
+(module reader syntax/module-reader
+  algebra)
 
 ;; lab2
 
@@ -55,60 +61,19 @@ Expression = (function-application Variable Expression ...)
   (syntax-parse stx
     [(_ (f:id parameter:id ...) body:expr)
      (define arity (length (syntax->list #'(parameter ...))))
+     (define f (λ (parameter ...) #'body))
      #`(define-syntax f (cons #,arity #'(lambda (parameter ...) body)))]))
 
 ;; SYNTAX
 ;; (function-app f e1 ... eN)
 ;; applies f to the values of e1 ... IF f is defined and f's arity is N 
 (define-syntax (app stx)
-  (syntax-parse stx #:datum-literals (plus minus mult string+ ++ zero?)
-    #;[(_ zero? arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 1 n-args) #`(zero? arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    #;[(_ plus arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(+ arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    [(_ mult arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(* arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    [(_ minus arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(- arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    [(_ string+ arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 2 n-args) #`(string-append arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
-    [(_ ++ arg:expr ...)
-     (define n-args (length (syntax->list #'(arg ...))))
-     (cond
-       [(= 1 n-args) #`(add1 arg ...)]
-       [else
-        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
-        (raise-syntax-error #f msg stx)])]
+  (syntax-parse stx
     [(_ f:id arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (define-values (arity the-function) (lookup #'f stx))
      (cond
-       [(= arity n-args)  #`(#,the-function arg ...)]
+       [(= arity n-args)  #`(f arg ...)]
        [else
         (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
         (raise-syntax-error #f msg stx)])]
@@ -124,19 +89,6 @@ Expression = (function-application Variable Expression ...)
     (raise-syntax-error #f msg stx))
   (define result (syntax-local-value id failure))
   (values (car result) (cdr result)))
-;
-;;; Tests for func-app
-;(check-equal? (function-app plus 1 2) 3)
-;(check-equal? (function-app plus (function-app plus 1 0) (function-app plus 0 2)) 3)
-;(check-equal? (function-app minus 1 2) -1)
-;(check-equal? (function-app minus (function-app minus 1 0) (function-app minus 2 0)) -1)
-;(check-equal? (function-app minus 9 (function-app minus 2 0)) 7)
-;(check-equal? (function-app string+ "9" (function-app string+ " 0" " 2")) "9 0 2")
-;(check-equal? (function-app string+ "cat" (function-app string+ " crow" (function-app string+ " dog" " cow")))
-;              "cat crow dog cow")
-;(check-equal? (function-app ++ 0) 1)
-;(check-equal? (function-app ++ (function-app ++ 2)) 4)
-;(check-equal? (function-app ++ (function-app plus (function-app ++ 3) (function-app minus 9 7))) 7)
 
 ;; define-as-next
 
@@ -150,7 +102,7 @@ Expression = (function-application Variable Expression ...)
 ;; if then else
 
 (define-syntax (iff stx)
-  (syntax-parse stx #:datum-literals (then else)
+  (syntax-parse stx #:literals (then else)
     [(_ bool:expr then expt:expr else expf:expr) (syntax/loc stx (if bool expt expf))]))
 
 (define-syntax (then stx)
@@ -169,61 +121,43 @@ Expression = (function-application Variable Expression ...)
 
 ;; module-reader only works with s-exps (?)
 
-(module reader syntax/module-reader
-  algebra) ;; algebra?
 
-#;
-(module reader racket/base
-  (provide read-syntax)
-  (define (read-syntax src in)
-    ;.. consume from in ...
-    #'(module a-mod arith
-        0)))
 
-(define-function (plus m n)
-  (+ m n))
+(define-syntax (gen-binop stx)
+  (syntax-parse stx
+    ((_ (name op) ...) #'(begin
+                           (define-syntax (name stx)
+                             (syntax-parse stx
+                               ((_ m:expr n:expr) #'(op m n))))
+                           ...))))
+(gen-binop (plus +) (minus -) (mult *) (div /) (gt >)
+           (lt <) (biggest max) (smallest min) (eq =)
+           (string+ string-append) (both and) (any or))
 
-(define-function (minus m n)
-  (- m n))
+;; Tests for func-app
+(check-equal? (plus 1 2) 3)
+(check-equal? (plus (plus 1 0) (plus 0 2)) 3)
+(check-equal? (minus 1 2) -1)
+(check-equal? (minus (minus 1 0) (minus 2 0)) -1)
+(check-equal? (minus 9 (minus 2 0)) 7)
+(check-equal? (string+ "9" (string+ " 0" " 2")) "9 0 2")
+(check-equal? (string+ "cat" (string+ " crow" (string+ " dog" " cow")))
+              "cat crow dog cow")
 
-(define-function (zero? n)
-  (zero? n))
+(define-syntax (gen-unary stx)
+  (syntax-parse stx
+    ((_ (name op) ...) #'(begin
+                           (define-syntax (name stx)
+                             (syntax-parse stx
+                               ((_ m:expr) #'(op m))))
+                           ...))))
 
-(define-function (mult m n)
-  (* m n))
+(gen-unary (iszero zero?) (++ add1) (-- sub1))
 
-(define-function (string+ m n)
-  (string-append m n))
-
-(define-function (++ n)
-  (add1 n))
-
-(define-function (-- n)
-  (sub1 n))
-
-(define-function (and m n)
-  (and m n))
-
-(define-function (not n)
-  (not n))
-
-(define-function (or m n)
-  (or m n))
-
-(define-function (min m n)
-  (min m n))
-
-(define-function (max m n)
-  (max m n))
-
-(define-function (div m n)
-  (/ m n))
-
-(define-function (gt m n)
-  (> m n))
-
-(define-function (lt m n)
-  (< m n))
-
-(define-function (eq m n)
-  (= m n))
+(check-equal? (iszero 0) #t)
+(check-equal? (iszero 1) #f)
+(check-equal? (++ 0) 1)
+(check-equal? (++ 1) 2)
+(check-equal? (-- 1) 0)
+(check-equal? (-- 2) 1)
+(check-equal? (++ 0) 1)
