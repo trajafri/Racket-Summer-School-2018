@@ -66,20 +66,16 @@
   (syntax-parse stx #:datum-literals (orelse)
     [(_ exp:expr
         [(x ...) expr0:expr])
-     #'(if (member exp x ...) expr0 (error "heck"))]
+     #'(if (member exp '(x ...)) expr0 (error "heck"))]
     [(_ exp:expr
         [(x ...) expr0:expr] [orelse exprn:expr])
-     #'(if (member exp x ...) expr0 exprn)]
+     #'(if (member exp '(x ...)) expr0 exprn)]
     [(_ exp:expr
         [(x ...) expr0:expr]
         dc0
         ...)
-     #'(if (member exp x ...) (begin expr0 (dispatch exp dc0 ...)) (dispatch exp dc0 ...))]))
+     #'(if (member exp '(x ...)) (begin expr0 (dispatch exp dc0 ...)) (dispatch exp dc0 ...))]))
 
-(define-syntax (member stx)
-  (syntax-parse stx
-    [(_ elem s1) #'(if (eqv? elem 's1) #t #f)]
-    [(_ elem s1 s2 ...) #'(or (eqv? 's1 elem) (member elem s2 ...))]))
 
 (define (f x)
   (dispatch x
@@ -109,16 +105,53 @@
 
 ;; EX 6
 
+(define-syntax (where stx)
+  (syntax-parse stx
+    [(_ body [var0:id expr0:expr] ...) #'(letrec ([var0 expr0] ...) body)]))
+
+(check-equal? (where (op 10 (+ my-favorite-number an-ok-number))
+                     [my-favorite-number 8]
+                     [an-ok-number 2]
+                     [op *]) 100)
+
+(define-syntax (where* stx)
+  (syntax-parse stx
+    [(_ body [var0:id expr0:expr] ...) #`(where body #,@(datum->syntax #f (reverse (syntax->list #'([var0 expr0] ...)))))]))
+
+(check-equal? (where* (list x y z)
+                      [x (+ y 4)]
+                      [y (+ z 2)]
+                      [z 1]) (list 7 3 1))
+
+(check-equal? (where* (z x)
+                      [x (+ y 2)]
+                      [y 3]
+                      [z ((λ (f)
+                            (λ (n)
+                              (if (zero? n) 1 (* n ((f f) (sub1 n))))))
+                          (λ (f)
+                            (λ (n)
+                              (if (zero? n) 1 (* n ((f f) (sub1 n)))))))]) 120)
+
+;; EX 7
+
 (define-syntax (and/v stx)
   (syntax-parse stx #:datum-literals (=>)
     [(_ exp:expr => var:id body) #'(let [(var exp)]
-                                     (if var body #f))]))
+                                     (if var body #f))]
+    [(_ exp:expr body) #'(and exp body)]))
 
-(and/v 1 => x (+ x 1))
-(and/v #f => x (+ x 1))
+(check-equal? (and/v 1 => x (+ x 1)) 2)
+(check-equal? (and/v #f => x (+ x 1)) #f)
 
+;; EX 8
 
-;; EX 7
+#|
+Exercise 8. Modify the definition of split-ct from lecture so that it can also deal
+with specifications that do not provide literal constants for start and end.
+
+When a non-literal start or end is provided, the range check should happen at run time.
+|#
 
 (begin-for-syntax
   (define-syntax-class byte
@@ -140,9 +173,138 @@
      #`(let ([i start])
          (let*-values ([(i name) (values (+ i step) (extract tags i (+ i step -1)))]
                        ...)
-           (values ((~? convert values) name) ...)))]))
+           (values ((~? convert values) name) ...)))]
+    ;------------------------------------------------------------
+    [(_ tags [name step:byte (~optional convert)] ...)
+     ; ———————————
+     ; the static error checking 
+     #:do [(define end-int   (syntax-e #'256))
+           (define step-int (sum #'(step ...)))]
+     #:fail-unless (< step-int end-int) "index out of range"
+     ; ———————————
+     #`(let ([i 0])
+         (let*-values ([(i name) (values (+ i step) (extract tags i (+ i step -1)))]
+                       ...)
+           (values ((~? convert values) name) ...)))]
+    ))
  
 ; [Listof [Syntax Number]] -> Number
 ; compute the sum of the numbers hidden in syntax 
 (define-for-syntax (sum list-of-syntax-numbers)
   (apply + (map syntax-e (syntax->list list-of-syntax-numbers))))
+
+#|
+Definition = (define-function (Variable Variable1 ...)  Expression)
+ 	 	 	 	 
+Expression = (function-application Variable Expression ...)
+          |  (if Expression Expression Expression)
+          |  (+ Expression Expression)
+          |  Variable
+          |  Number
+          |  String
+|#
+
+; ;; SYNTAX
+; ;; (define-function (f x ...) e)
+; ;; binds f to a syntax tranformer of shape (cons n s)
+; ;; where n is the arity |x ...| of f
+; ;; and   s is syntax for (λ (x ...) e)
+ 
+(define-syntax (define-function stx)
+  (syntax-parse stx
+    [(_ (f:id parameter:id ...) body:expr)
+     (define arity (length (syntax->list #'(parameter ...))))
+     #`(define-syntax f (cons #,arity #'(lambda (parameter ...) body)))]))
+
+; ;; SYNTAX
+; ;; (function-app f e1 ... eN)
+; ;; applies f to the values of e1 ... IF f is defined and f's arity is N 
+ 
+(define-syntax (function-app stx)
+  (syntax-parse stx #:datum-literals (plus minus string+)
+    [(_ plus arg:expr ...)
+     (define n-args (length (syntax->list #'(arg ...))))
+     (cond
+       [(= 2 n-args) #`(+ arg ...)]
+       [else
+        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
+        (raise-syntax-error #f msg stx)])]
+    [(_ minus arg:expr ...)
+     (define n-args (length (syntax->list #'(arg ...))))
+     (cond
+       [(= 2 n-args) #`(- arg ...)]
+       [else
+        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
+        (raise-syntax-error #f msg stx)])]
+    [(_ string+ arg:expr ...)
+     (define n-args (length (syntax->list #'(arg ...))))
+     (cond
+       [(= 2 n-args) #`(string-append arg ...)]
+       [else
+        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
+        (raise-syntax-error #f msg stx)])]
+    [(_ ++ arg:expr ...)
+     (define n-args (length (syntax->list #'(arg ...))))
+     (cond
+       [(= 1 n-args) #`(add1 arg ...)]
+       [else
+        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
+        (raise-syntax-error #f msg stx)])]
+    [(_ f:id arg:expr ...)
+     (define n-args (length (syntax->list #'(arg ...))))
+     (define-values (arity the-function) (lookup #'f stx))
+     (cond
+       [(= arity n-args) #`(#,the-function arg ...)]
+       [else
+        (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
+        (raise-syntax-error #f msg stx)])]))
+
+;; EX 9
+
+; Identifier Syntax -> (values N Id)
+; EFFECT raises an exception if id is not available
+(define-for-syntax (lookup id stx)
+  ; -> Empty
+  ; EFFECT abort process with syntax error 
+  (define (failure)
+    (define msg (format "undefined function: ~a" (syntax-e id)))
+    (raise-syntax-error #f msg stx))
+  (define result (syntax-local-value id failure))
+  (values (car result) (cdr result)))
+
+(check-equal? (function-app plus 1 2) 3)
+(check-equal? (function-app plus (function-app plus 1 0) (function-app plus 0 2)) 3)
+
+(check-equal? (function-app minus 1 2) -1)
+(check-equal? (function-app minus (function-app minus 1 0) (function-app minus 2 0)) -1)
+(check-equal? (function-app minus 9 (function-app minus 2 0)) 7)
+
+;; EX 10
+
+(check-equal? (function-app string+ "9" (function-app string+ " 0" " 2")) "9 0 2")
+(check-equal? (function-app string+ "cat" (function-app string+ " crow" (function-app string+ " dog" " cow")))
+              "cat crow dog cow")
+
+(check-equal? (function-app ++ 0) 1)
+(check-equal? (function-app ++ (function-app ++ 2)) 4)
+(check-equal? (function-app ++ (function-app plus (function-app ++ 3) (function-app minus 9 7))) 7)
+
+;; EX 11
+(define next 0)
+
+(define-syntax (define-as-next stx)
+  (syntax-parse stx
+    ((_ var:id) #'(begin (define var next)
+                         (set! next (+ next 1))))))
+
+;(define-as-next x)
+;(define-as-next y)
+;(define-as-next z)
+
+(define-as-next x)
+(define get-y
+  (λ () (define-as-next y) y))
+(define 1y (get-y))
+(define another-y (get-y))
+
+
