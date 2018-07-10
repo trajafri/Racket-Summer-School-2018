@@ -113,10 +113,11 @@
                      [my-favorite-number 8]
                      [an-ok-number 2]
                      [op *]) 100)
+(check-equal? (where 100) 100)
 
 (define-syntax (where* stx)
   (syntax-parse stx
-    [(_ body [var0:id expr0:expr] ...) #`(where body #,@(datum->syntax #f (reverse (syntax->list #'([var0 expr0] ...)))))]))
+    [(_ body [var0:id expr0:expr] ...) #`(where body #,@(reverse (syntax->list #'([var0 expr0] ...))))]))
 
 (check-equal? (where* (list x y z)
                       [x (+ y 4)]
@@ -222,28 +223,28 @@ Expression = (function-application Variable Expression ...)
  
 (define-syntax (function-app stx)
   (syntax-parse stx #:datum-literals (plus minus string+)
-    [(_ plus arg:expr ...)
+    #;[(_ plus arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (cond
        [(= 2 n-args) #`(+ arg ...)]
        [else
         (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
         (raise-syntax-error #f msg stx)])]
-    [(_ minus arg:expr ...)
+    #;[(_ minus arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (cond
        [(= 2 n-args) #`(- arg ...)]
        [else
         (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
         (raise-syntax-error #f msg stx)])]
-    [(_ string+ arg:expr ...)
+    #;[(_ string+ arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (cond
        [(= 2 n-args) #`(string-append arg ...)]
        [else
         (define msg (format "wrong number of arguments for ~a" (syntax-e #'f)))
         (raise-syntax-error #f msg stx)])]
-    [(_ ++ arg:expr ...)
+    #;[(_ ++ arg:expr ...)
      (define n-args (length (syntax->list #'(arg ...))))
      (cond
        [(= 1 n-args) #`(add1 arg ...)]
@@ -290,21 +291,47 @@ Expression = (function-application Variable Expression ...)
 (check-equal? (function-app ++ (function-app plus (function-app ++ 3) (function-app minus 9 7))) 7)
 
 ;; EX 11
-(define next 0)
+(define-for-syntax next 0)
 
 (define-syntax (define-as-next stx)
   (syntax-parse stx
-    ((_ var:id) #'(begin (define var next)
-                         (set! next (+ next 1))))))
+    ((_ var:id) (set! next (+ next 1))
+                #`(define var #,(sub1 next)))))
 
 ;(define-as-next x)
 ;(define-as-next y)
 ;(define-as-next z)
 
-(define-as-next x)
-(define get-y
-  (λ () (define-as-next y) y))
-(define 1y (get-y))
-(define another-y (get-y))
+(define-as-next x)  ; first define-as-next, so x = 0
+(define get-y        
+  (λ ()
+    (define-as-next y)
+    y))  ;; function that returns y's value (where y = 2 because this is a runtime function. z is bounded to 1 before this)
+(define 1y (get-y))            ;; 1y = 2
 
+(define another-y (get-y))     ;; another-y = 2
+(define-as-next z)             ;; z = 1
 
+(module server racket
+  (require (for-syntax syntax/parse))
+  (provide define-as-next)
+  (define-for-syntax next 0)
+  (define-syntax (define-as-next stx)
+    (syntax-parse stx
+      ((_ var:id) (set! next (+ next 1))
+                  #`(define var #,(sub1 next))))))
+ 
+(module client racket
+  (require (submod ".." server))
+  (define-as-next x)
+  (define-as-next y)
+  (define-as-next z) x y z)
+
+(module client2 racket
+  (require (submod ".." server))
+  (define-as-next x)
+  (define-as-next y)
+  (define-as-next z) x y z)
+
+(require 'client)
+(require 'client2)
