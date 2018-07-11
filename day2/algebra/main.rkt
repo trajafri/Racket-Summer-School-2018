@@ -2,32 +2,14 @@
 (require (for-syntax syntax/parse)
          rackunit)
 
-(provide
- require
- #%module-begin
- #%top-interaction
- app
- plus
- minus
- mult
- iszero
- string+
- ++
- --
- smallest
- biggest
- div
- both
- any
- gt
- lt
- eq
- then
- else
- (rename-out
-  [literal #%datum]
-  [define-function define]
-  [iff if]))
+(provide require #%module-begin #%top-interaction app
+         plus minus mult string+ smallest biggest div
+         both any gt lt eq str-eq iszero ++ -- str-len
+         then else
+         (rename-out
+          [literal #%datum]
+          [define-function define]
+          [iff if]))
 
 (module reader syntax/module-reader
   algebra)
@@ -44,7 +26,6 @@ Expression = (function-application Variable Expression ...)
           |  Number
           |  String
 |#
-;plus
 ;; literal as #%datum
 (define-syntax (literal stx)
   (syntax-parse stx
@@ -114,15 +95,7 @@ Expression = (function-application Variable Expression ...)
   (syntax-parse stx
     [(_ a) (raise-syntax-error 'else "keyword `else` is only allowed in if expressions." #'a)]))
 
-
-
 ;; =================================
-
-;; register the package
-
-;; module-reader only works with s-exps (?)
-
-
 
 (define-syntax (gen-binop stx)
   (syntax-parse stx
@@ -133,17 +106,9 @@ Expression = (function-application Variable Expression ...)
                            ...))))
 (gen-binop (plus +) (minus -) (mult *) (div /) (gt >)
            (lt <) (biggest max) (smallest min) (eq =)
-           (string+ string-append) (both and) (any or))
+           (string+ string-append) (both and) (any or)
+           (str-eq string=?))
 
-;; Tests for func-app
-(check-equal? (plus 1 2) 3)
-(check-equal? (plus (plus 1 0) (plus 0 2)) 3)
-(check-equal? (minus 1 2) -1)
-(check-equal? (minus (minus 1 0) (minus 2 0)) -1)
-(check-equal? (minus 9 (minus 2 0)) 7)
-(check-equal? (string+ "9" (string+ " 0" " 2")) "9 0 2")
-(check-equal? (string+ "cat" (string+ " crow" (string+ " dog" " cow")))
-              "cat crow dog cow")
 
 (define-syntax (gen-unary stx)
   (syntax-parse stx
@@ -153,12 +118,4 @@ Expression = (function-application Variable Expression ...)
                                ((_ m:expr) #'(op m))))
                            ...))))
 
-(gen-unary (iszero zero?) (++ add1) (-- sub1))
-
-(check-equal? (iszero 0) #t)
-(check-equal? (iszero 1) #f)
-(check-equal? (++ 0) 1)
-(check-equal? (++ 1) 2)
-(check-equal? (-- 1) 0)
-(check-equal? (-- 2) 1)
-(check-equal? (++ 0) 1)
+(gen-unary (iszero zero?) (++ add1) (-- sub1) (str-len string-length))
