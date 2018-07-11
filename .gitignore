@@ -1,4 +1,4 @@
 *.bak
 *.rkt~
 ./stack/
-./compiled/
+compiled/
