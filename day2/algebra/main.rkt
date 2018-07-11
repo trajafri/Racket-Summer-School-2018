@@ -2,7 +2,8 @@
 (require (for-syntax syntax/parse)
          rackunit)
 
-(provide 
+(provide
+ require
  #%module-begin
  #%top-interaction
  app
